@@ -2,6 +2,7 @@ import { CLI } from '@stacksjs/clapp'
 import { version } from '../package.json'
 import { discoverPrinters } from '../src/discovery'
 import { FirmwareUpdater } from '../src/firmware'
+import { PrinterMaintenance } from '../src/maintenance'
 import { Printer } from '../src/printer'
 import { getConfig } from '../src/config'
 
@@ -347,6 +348,113 @@ cli
     }
     catch (err) {
       console.error(`Reset failed: ${(err as Error).message}`)
+      process.exit(1)
+    }
+  })
+
+cli
+  .command('clean', 'Clean the printhead (fixes poor print quality)')
+  .option('--host <host>', 'Printer hostname or IP')
+  .option('--level <level>', 'Cleaning level: 1, 2, or 3 (default: 1)', { default: '1' })
+  .action(async (options?: { host?: string, level?: string }) => {
+    const host = await resolveHost(options?.host)
+    const maint = new PrinterMaintenance(host)
+
+    const levelMap: Record<string, 'level1' | 'level2' | 'level3'> = { '1': 'level1', '2': 'level2', '3': 'level3' }
+    const level = levelMap[options?.level ?? '1'] || 'level1'
+
+    console.log(`Running printhead cleaning (${level})...`)
+    console.log('Make sure paper is loaded.\n')
+
+    try {
+      const result = await maint.clean(level)
+      console.log(result.success ? result.message : `Failed: ${result.message}`)
+      if (!result.success) process.exit(1)
+    }
+    catch (err) {
+      console.error(`Clean failed: ${(err as Error).message}`)
+      process.exit(1)
+    }
+  })
+
+cli
+  .command('align', 'Align the printhead (fixes blurry text or misaligned colors)')
+  .option('--host <host>', 'Printer hostname or IP')
+  .action(async (options?: { host?: string }) => {
+    const host = await resolveHost(options?.host)
+    const maint = new PrinterMaintenance(host)
+
+    console.log('Running printhead alignment...')
+    console.log('Make sure paper is loaded.\n')
+
+    try {
+      const result = await maint.align()
+      console.log(result.success ? result.message : `Failed: ${result.message}`)
+      if (!result.success) process.exit(1)
+    }
+    catch (err) {
+      console.error(`Align failed: ${(err as Error).message}`)
+      process.exit(1)
+    }
+  })
+
+cli
+  .command('maintain', 'Full maintenance routine (clean + align, for printers unused for a long time)')
+  .option('--host <host>', 'Printer hostname or IP')
+  .action(async (options?: { host?: string }) => {
+    const host = await resolveHost(options?.host)
+    const maint = new PrinterMaintenance(host)
+
+    console.log('Running full maintenance routine...')
+    console.log('Make sure paper is loaded. This will print several pages.\n')
+
+    try {
+      const results = await maint.fullMaintenance((msg) => {
+        console.log(msg)
+      })
+
+      console.log('\nResults:')
+      for (const r of results) {
+        console.log(`  ${r.success ? 'OK' : 'FAIL'}: ${r.message}`)
+      }
+    }
+    catch (err) {
+      console.error(`Maintenance failed: ${(err as Error).message}`)
+      process.exit(1)
+    }
+  })
+
+cli
+  .command('diagnostic', 'Print a diagnostic or info page')
+  .option('--host <host>', 'Printer hostname or IP')
+  .option('--type <type>', 'Page type: quality, config, network, smear', { default: 'quality' })
+  .action(async (options?: { host?: string, type?: string }) => {
+    const host = await resolveHost(options?.host)
+    const maint = new PrinterMaintenance(host)
+
+    try {
+      let result
+      switch (options?.type) {
+        case 'config':
+          result = await maint.configurationPage()
+          break
+        case 'network':
+          result = await maint.networkSummary()
+          break
+        case 'smear':
+          result = await maint.cleanSmear()
+          break
+        case 'quality':
+        default:
+          result = await maint.printQualityDiagnostics()
+          break
+      }
+
+      console.log(result.success ? result.message : `Failed: ${result.message}`)
+      if (!result.success) process.exit(1)
+    }
+    catch (err) {
+      console.error(`Diagnostic failed: ${(err as Error).message}`)
       process.exit(1)
     }
   })

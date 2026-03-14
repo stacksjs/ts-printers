@@ -298,6 +298,28 @@ function currentUser(): string {
   return process.env.USER || process.env.USERNAME || 'anonymous'
 }
 
+function mapPrinterState(state: number): 'idle' | 'processing' | 'stopped' | 'unknown' {
+  switch (state) {
+    case 3: return 'idle'
+    case 4: return 'processing'
+    case 5: return 'stopped'
+    default: return 'unknown'
+  }
+}
+
+function mapJobState(state: number): string {
+  switch (state) {
+    case 3: return 'pending'
+    case 4: return 'pending-held'
+    case 5: return 'processing'
+    case 6: return 'processing-stopped'
+    case 7: return 'canceled'
+    case 8: return 'aborted'
+    case 9: return 'completed'
+    default: return `unknown(${state})`
+  }
+}
+
 function str(val: IppAttributeValue | undefined): string {
   if (val === undefined || val === null) return ''
   if (typeof val === 'string') return val
