@@ -1,9 +1,8 @@
 import { CLI } from '@stacksjs/clapp'
 import { version } from '../package.json'
 import { discoverPrinters } from '../src/discovery'
-import { FirmwareUpdater } from '../src/firmware'
-import { PrinterMaintenance } from '../src/maintenance'
 import { Printer } from '../src/printer'
+import { createDriverFromHost } from '../src/drivers'
 import { getConfig } from '../src/config'
 
 const cli = new CLI('print')
@@ -49,6 +48,7 @@ cli
       const status = await printer.status()
 
       console.log(`Printer: ${status.name}`)
+      console.log(`Driver:  ${printer.driverName}`)
       console.log(`State:   ${status.state}`)
       if (status.stateReasons.length > 0) {
         console.log(`Reasons: ${status.stateReasons.join(', ')}`)
@@ -202,34 +202,25 @@ cli
     }
   })
 
+// --- Firmware commands (driver-based) ---
+
 cli
   .command('firmware', 'Manage printer firmware')
-  .option('--host <host>', 'Printer hostname or IP (e.g. HP84A93E359A83.local or 192.168.0.147)')
+  .option('--host <host>', 'Printer hostname or IP')
   .action(async (options?: { host?: string }) => {
     const host = await resolveHost(options?.host)
-    const fw = new FirmwareUpdater(host)
+    const driver = await createDriverFromHost(host)
 
     try {
-      const info = await fw.getInfo()
-      const state = await fw.getState()
-      const config = await fw.getConfig()
+      const info = await driver.getFirmwareInfo()
 
       console.log('Firmware Information')
+      console.log(`  Driver:          ${driver.driverName}`)
       console.log(`  Model:           ${info.model}`)
       console.log(`  Serial:          ${info.serialNumber}`)
       console.log(`  Product:         ${info.productNumber}`)
       console.log(`  Version:         ${info.currentVersion}`)
       console.log(`  Date:            ${info.currentDate}`)
-      console.log()
-      console.log('Update Status')
-      console.log(`  Status:          ${state.status}`)
-      if (state.error) console.log(`  Error:           ${state.error}`)
-      if (state.targetVersion) console.log(`  Available:       ${state.targetVersion}`)
-      if (state.progress !== undefined) console.log(`  Progress:        ${state.progress}%`)
-      console.log()
-      console.log('Auto-Update')
-      console.log(`  Auto check:      ${config.automaticCheck ? 'enabled' : 'disabled'}`)
-      console.log(`  Auto update:     ${config.automaticUpdate ? 'enabled' : 'disabled'}`)
     }
     catch (err) {
       console.error(`Failed: ${(err as Error).message}`)
@@ -238,57 +229,14 @@ cli
   })
 
 cli
-  .command('firmware:check', 'Check for firmware updates')
+  .command('firmware:update', 'Download and install latest firmware automatically')
   .option('--host <host>', 'Printer hostname or IP')
   .action(async (options?: { host?: string }) => {
     const host = await resolveHost(options?.host)
-    const fw = new FirmwareUpdater(host)
-
-    console.log('Checking for firmware updates...')
+    const driver = await createDriverFromHost(host)
 
     try {
-      const state = await fw.check()
-
-      switch (state.status) {
-        case 'available':
-          console.log(`\nUpdate available!`)
-          if (state.targetVersion) console.log(`  New version: ${state.targetVersion}`)
-          if (state.targetDate) console.log(`  Date:        ${state.targetDate}`)
-          if (state.type) console.log(`  Type:        ${state.type}`)
-          if (state.reason) console.log(`  Reason:      ${state.reason}`)
-          console.log(`\nRun 'print firmware:update --host ${host}' to install.`)
-          break
-        case 'notAvailable':
-          console.log('\nFirmware is up to date.')
-          break
-        case 'checkFailed':
-          console.log(`\nCheck failed: ${state.error || 'unknown error'}`)
-          if (state.error === 'CommunicationError') {
-            console.log('\nThe printer cannot reach HP\'s update servers.')
-            console.log('Use the automated update instead (downloads from HP, sends directly to printer):')
-            console.log(`  print firmware:update --host ${host}`)
-          }
-          break
-        default:
-          console.log(`\nStatus: ${state.status}`)
-          if (state.error) console.log(`Error: ${state.error}`)
-      }
-    }
-    catch (err) {
-      console.error(`Check failed: ${(err as Error).message}`)
-      process.exit(1)
-    }
-  })
-
-cli
-  .command('firmware:update', 'Download and install latest firmware from HP automatically')
-  .option('--host <host>', 'Printer hostname or IP')
-  .action(async (options?: { host?: string }) => {
-    const host = await resolveHost(options?.host)
-    const fw = new FirmwareUpdater(host)
-
-    try {
-      const result = await fw.autoUpdate((msg) => {
+      const result = await driver.updateFirmware((msg) => {
         console.log(msg)
       })
 
@@ -302,27 +250,24 @@ cli
   })
 
 cli
-  .command('firmware:upload', 'Upload a firmware file (.ful) directly to the printer')
+  .command('firmware:upload', 'Upload a firmware file directly to the printer')
   .option('--host <host>', 'Printer hostname or IP')
   .action(async (options?: { host?: string }) => {
     const args = process.argv.slice(3)
     const filePath = args.find(a => !a.startsWith('-'))
 
     if (!filePath) {
-      console.error('Usage: print firmware:upload <firmware.ful> --host <host>')
+      console.error('Usage: print firmware:upload <firmware-file> --host <host>')
       process.exit(1)
     }
 
     const host = await resolveHost(options?.host)
-    const fw = new FirmwareUpdater(host)
+    const driver = await createDriverFromHost(host)
 
     console.log(`Uploading firmware from ${filePath}...`)
 
     try {
-      const info = await fw.getInfo()
-      console.log(`  Current version: ${info.currentVersion} (${info.currentDate})`)
-
-      const result = await fw.uploadFirmwareFile(filePath, (msg) => {
+      const result = await driver.uploadFirmware(filePath, (msg) => {
         console.log(msg)
       })
 
@@ -335,22 +280,7 @@ cli
     }
   })
 
-cli
-  .command('firmware:reset', 'Reset firmware update state (clear errors)')
-  .option('--host <host>', 'Printer hostname or IP')
-  .action(async (options?: { host?: string }) => {
-    const host = await resolveHost(options?.host)
-    const fw = new FirmwareUpdater(host)
-
-    try {
-      await fw.reset()
-      console.log('Firmware update state reset.')
-    }
-    catch (err) {
-      console.error(`Reset failed: ${(err as Error).message}`)
-      process.exit(1)
-    }
-  })
+// --- Maintenance commands (driver-based) ---
 
 cli
   .command('clean', 'Clean the printhead (fixes poor print quality)')
@@ -358,16 +288,16 @@ cli
   .option('--level <level>', 'Cleaning level: 1, 2, or 3 (default: 1)', { default: '1' })
   .action(async (options?: { host?: string, level?: string }) => {
     const host = await resolveHost(options?.host)
-    const maint = new PrinterMaintenance(host)
+    const driver = await createDriverFromHost(host)
 
     const levelMap: Record<string, 'level1' | 'level2' | 'level3'> = { '1': 'level1', '2': 'level2', '3': 'level3' }
     const level = levelMap[options?.level ?? '1'] || 'level1'
 
-    console.log(`Running printhead cleaning (${level})...`)
+    console.log(`Running printhead cleaning (${level}) via ${driver.driverName} driver...`)
     console.log('Make sure paper is loaded.\n')
 
     try {
-      const result = await maint.clean(level)
+      const result = await driver.clean(level)
       console.log(result.success ? result.message : `Failed: ${result.message}`)
       if (!result.success) process.exit(1)
     }
@@ -382,13 +312,13 @@ cli
   .option('--host <host>', 'Printer hostname or IP')
   .action(async (options?: { host?: string }) => {
     const host = await resolveHost(options?.host)
-    const maint = new PrinterMaintenance(host)
+    const driver = await createDriverFromHost(host)
 
     console.log('Running printhead alignment...')
     console.log('Make sure paper is loaded.\n')
 
     try {
-      const result = await maint.align()
+      const result = await driver.align()
       console.log(result.success ? result.message : `Failed: ${result.message}`)
       if (!result.success) process.exit(1)
     }
@@ -399,17 +329,17 @@ cli
   })
 
 cli
-  .command('maintain', 'Full maintenance routine (clean + align, for printers unused for a long time)')
+  .command('maintain', 'Full maintenance routine (clean + align)')
   .option('--host <host>', 'Printer hostname or IP')
   .action(async (options?: { host?: string }) => {
     const host = await resolveHost(options?.host)
-    const maint = new PrinterMaintenance(host)
+    const driver = await createDriverFromHost(host)
 
-    console.log('Running full maintenance routine...')
+    console.log(`Running full maintenance via ${driver.driverName} driver...`)
     console.log('Make sure paper is loaded. This will print several pages.\n')
 
     try {
-      const results = await maint.fullMaintenance((msg) => {
+      const results = await driver.fullMaintenance((msg) => {
         console.log(msg)
       })
 
@@ -430,26 +360,10 @@ cli
   .option('--type <type>', 'Page type: quality, config, network, smear', { default: 'quality' })
   .action(async (options?: { host?: string, type?: string }) => {
     const host = await resolveHost(options?.host)
-    const maint = new PrinterMaintenance(host)
+    const driver = await createDriverFromHost(host)
 
     try {
-      let result
-      switch (options?.type) {
-        case 'config':
-          result = await maint.configurationPage()
-          break
-        case 'network':
-          result = await maint.networkSummary()
-          break
-        case 'smear':
-          result = await maint.cleanSmear()
-          break
-        case 'quality':
-        default:
-          result = await maint.printQualityDiagnostics()
-          break
-      }
-
+      const result = await driver.diagnostic(options?.type)
       console.log(result.success ? result.message : `Failed: ${result.message}`)
       if (!result.success) process.exit(1)
     }
@@ -467,31 +381,26 @@ cli.version(version)
 cli.help()
 cli.parse()
 
-// Helpers
+// --- Helpers ---
 
 async function resolveUri(explicitUri?: string): Promise<string> {
   if (explicitUri) return explicitUri
 
-  // Check config for default printer
   try {
     const config = await getConfig()
     if (config.defaultPrinter) {
-      // If it's a key in the printers map, resolve it
       if (config.printers?.[config.defaultPrinter]) {
         return config.printers[config.defaultPrinter].uri
       }
-      // Otherwise treat it as a URI
       return config.defaultPrinter
     }
   }
   catch {
-    // No config file, that's fine
+    // No config file
   }
 
-  // Auto-discover and pick the first printer
   console.log('No printer specified. Discovering...')
-  const { discoverPrinters: discover } = await import('../src/discovery')
-  const printers = await discover({ timeout: 5000 })
+  const printers = await discoverPrinters({ timeout: 5000 })
 
   if (printers.length === 0) {
     console.error('No printers found. Use --printer <uri> or set defaultPrinter in print.config.ts')
@@ -503,7 +412,6 @@ async function resolveUri(explicitUri?: string): Promise<string> {
     return printers[0].uri
   }
 
-  // Multiple printers found, list them
   console.log('Multiple printers found:')
   for (let i = 0; i < printers.length; i++) {
     console.log(`  [${i + 1}] ${printers[i].name} - ${printers[i].uri}`)
@@ -515,7 +423,6 @@ async function resolveUri(explicitUri?: string): Promise<string> {
 async function resolveHost(explicitHost?: string): Promise<string> {
   if (explicitHost) return explicitHost
 
-  // Try to discover a printer and use its host
   console.log('No host specified. Discovering printers...')
   const printers = await discoverPrinters({ timeout: 5000 })
 

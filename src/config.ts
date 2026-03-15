@@ -18,4 +18,8 @@ export async function getConfig(): Promise<PrintConfig> {
   return _config
 }
 
+export function resetConfig(): void {
+  _config = null
+}
+
 export const config: PrintConfig = defaultConfig

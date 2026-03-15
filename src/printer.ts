@@ -1,435 +1,63 @@
-import type { IppAttributeGroup, IppAttributeValue, IppResponse, PrintJob, PrintJobOptions, PrinterStatus } from './types'
-import { IppOperation, IppTag, OrientationMap, QualityMap } from './types'
-import { IppClient } from './ipp/client'
-import { getAttribute, getAttributes } from './ipp/encoding'
+/**
+ * High-level Printer class.
+ *
+ * This is the main entry point for interacting with printers.
+ * It auto-detects the printer vendor and uses the appropriate driver.
+ *
+ * For vendor-specific features (firmware, maintenance), use the driver directly:
+ *   import { HpDriver } from 'ts-printers/drivers/hp'
+ */
+
+import type { PrintJob, PrintJobOptions, PrinterStatus } from './types'
+import type { CleaningLevel, DriverCapabilities, FirmwareInfo, MaintenanceResult, ProgressCallback } from './drivers/base'
+import { createDriverFromHost, createDriverFromUri, PrinterDriver } from './drivers'
 
 export class Printer {
-  readonly uri: string
-  readonly name: string
-  private client: IppClient
+  private driver: PrinterDriver
 
   constructor(uri: string, name?: string) {
-    this.uri = uri
-    this.name = name ?? uri
-    this.client = new IppClient({ uri })
+    this.driver = createDriverFromUri(uri, undefined, name)
+  }
+
+  get uri(): string { return this.driver.uri }
+  get name(): string { return this.driver.name }
+  get driverName(): string { return this.driver.driverName }
+
+  capabilities(): DriverCapabilities { return this.driver.capabilities() }
+
+  // --- Standard IPP operations ---
+  status(): Promise<PrinterStatus> { return this.driver.status() }
+  print(data: Buffer | Uint8Array, options?: PrintJobOptions): Promise<PrintJob> { return this.driver.print(data, options) }
+  printFile(filePath: string, options?: PrintJobOptions): Promise<PrintJob> { return this.driver.printFile(filePath, options) }
+  jobs(which?: 'completed' | 'not-completed' | 'all'): Promise<PrintJob[]> { return this.driver.jobs(which) }
+  cancelJob(jobId: number): Promise<void> { return this.driver.cancelJob(jobId) }
+  jobStatus(jobId: number): Promise<PrintJob> { return this.driver.jobStatus(jobId) }
+  identify(): Promise<void> { return this.driver.identify() }
+  validateJob(options?: PrintJobOptions): Promise<boolean> { return this.driver.validateJob(options) }
+
+  // --- Vendor-specific (delegated to driver, throws if unsupported) ---
+  getFirmwareInfo(): Promise<FirmwareInfo> { return this.driver.getFirmwareInfo() }
+  updateFirmware(onProgress?: ProgressCallback): Promise<MaintenanceResult> { return this.driver.updateFirmware(onProgress) }
+  uploadFirmware(filePath: string, onProgress?: ProgressCallback): Promise<MaintenanceResult> { return this.driver.uploadFirmware(filePath, onProgress) }
+  clean(level?: CleaningLevel): Promise<MaintenanceResult> { return this.driver.clean(level) }
+  align(): Promise<MaintenanceResult> { return this.driver.align() }
+  fullMaintenance(onProgress?: ProgressCallback): Promise<MaintenanceResult[]> { return this.driver.fullMaintenance(onProgress) }
+  diagnostic(type?: string): Promise<MaintenanceResult> { return this.driver.diagnostic(type) }
+  powerCycle(): Promise<void> { return this.driver.powerCycle() }
+
+  /**
+   * Get the underlying driver for direct access to vendor-specific APIs
+   */
+  getDriver<T extends PrinterDriver = PrinterDriver>(): T {
+    return this.driver as T
   }
 
   /**
-   * Get printer status and capabilities
+   * Create a Printer from just a hostname (auto-detects vendor)
    */
-  async status(): Promise<PrinterStatus> {
-    const groups: IppAttributeGroup[] = [
-      {
-        tag: IppTag.OperationAttributes,
-        attributes: [
-          { tag: IppTag.Charset, name: 'attributes-charset', value: 'utf-8' },
-          { tag: IppTag.NaturalLanguage, name: 'attributes-natural-language', value: 'en' },
-          { tag: IppTag.Uri, name: 'printer-uri', value: this.uri },
-        ],
-      },
-    ]
-
-    const response = await this.client.request(IppOperation.GetPrinterAttributes, groups)
-    this.checkStatus(response)
-
-    const attrs = getAttributes(response, IppTag.PrinterAttributes)
-
-    return {
-      name: str(attrs['printer-name']) || this.name,
-      uri: str(attrs['printer-uri-supported']) || this.uri,
-      state: mapPrinterState(num(attrs['printer-state'])),
-      stateReasons: strArray(attrs['printer-state-reasons']),
-      model: str(attrs['printer-make-and-model']) || undefined,
-      location: str(attrs['printer-location']) || undefined,
-      firmwareVersion: str(attrs['printer-firmware-string-version']) || undefined,
-      serialNumber: str(attrs['printer-device-id']) || undefined,
-      supportedFormats: strArray(attrs['document-format-supported']),
-      supportedMedia: strArray(attrs['media-supported']),
-      colorSupported: bool(attrs['color-supported']),
-      duplexSupported: strArray(attrs['sides-supported']).length > 1,
-      maxCopies: num(attrs['copies-supported']) || undefined,
-      pagesPerMinute: num(attrs['pages-per-minute']) || undefined,
-      pagesPerMinuteColor: num(attrs['pages-per-minute-color']) || undefined,
-      markerNames: strArray(attrs['marker-names']),
-      markerLevels: numArray(attrs['marker-levels']),
-      markerColors: strArray(attrs['marker-colors']),
-      markerTypes: strArray(attrs['marker-types']),
-    }
-  }
-
-  /**
-   * Print a file (Buffer/Uint8Array of document data)
-   */
-  async print(data: Buffer | Uint8Array, options?: PrintJobOptions): Promise<PrintJob> {
-    const format = options?.documentFormat ?? detectFormat(data)
-    const jobName = options?.jobName ?? `job-${Date.now()}`
-
-    const operationAttrs: IppAttributeGroup = {
-      tag: IppTag.OperationAttributes,
-      attributes: [
-        { tag: IppTag.Charset, name: 'attributes-charset', value: 'utf-8' },
-        { tag: IppTag.NaturalLanguage, name: 'attributes-natural-language', value: 'en' },
-        { tag: IppTag.Uri, name: 'printer-uri', value: this.uri },
-        { tag: IppTag.NameWithoutLanguage, name: 'requesting-user-name', value: currentUser() },
-        { tag: IppTag.NameWithoutLanguage, name: 'job-name', value: jobName },
-        { tag: IppTag.MimeMediaType, name: 'document-format', value: format },
-      ],
-    }
-
-    const jobAttrs: IppAttributeGroup = {
-      tag: IppTag.JobAttributes,
-      attributes: buildJobAttributes(options),
-    }
-
-    const groups = jobAttrs.attributes.length > 0
-      ? [operationAttrs, jobAttrs]
-      : [operationAttrs]
-
-    const response = await this.client.request(IppOperation.PrintJob, groups, data)
-    this.checkStatus(response)
-
-    const respAttrs = getAttributes(response, IppTag.JobAttributes)
-
-    return {
-      id: num(respAttrs['job-id']) || num(getAttribute(response, 'job-id')) || 0,
-      uri: str(respAttrs['job-uri']) || str(getAttribute(response, 'job-uri')) || '',
-      state: mapJobState(num(respAttrs['job-state']) || num(getAttribute(response, 'job-state'))),
-      name: jobName,
-    }
-  }
-
-  /**
-   * Print a file from disk
-   */
-  async printFile(filePath: string, options?: PrintJobOptions): Promise<PrintJob> {
-    const file = Bun.file(filePath)
-    if (!(await file.exists())) {
-      throw new Error(`File not found: ${filePath}`)
-    }
-
-    const data = Buffer.from(await file.arrayBuffer())
-    const format = options?.documentFormat ?? mimeFromPath(filePath)
-
-    return this.print(data, { ...options, documentFormat: format })
-  }
-
-  /**
-   * Get list of jobs on this printer
-   */
-  async jobs(whichJobs: 'completed' | 'not-completed' | 'all' = 'not-completed'): Promise<PrintJob[]> {
-    const groups: IppAttributeGroup[] = [
-      {
-        tag: IppTag.OperationAttributes,
-        attributes: [
-          { tag: IppTag.Charset, name: 'attributes-charset', value: 'utf-8' },
-          { tag: IppTag.NaturalLanguage, name: 'attributes-natural-language', value: 'en' },
-          { tag: IppTag.Uri, name: 'printer-uri', value: this.uri },
-          { tag: IppTag.NameWithoutLanguage, name: 'requesting-user-name', value: currentUser() },
-          { tag: IppTag.Keyword, name: 'which-jobs', value: whichJobs },
-        ],
-      },
-    ]
-
-    const response = await this.client.request(IppOperation.GetJobs, groups)
-    this.checkStatus(response)
-
-    const jobs: PrintJob[] = []
-    for (const group of response.groups) {
-      if (group.tag !== IppTag.JobAttributes) continue
-
-      const attrs: Record<string, IppAttributeValue> = {}
-      for (const attr of group.attributes) {
-        if (attr.name) attrs[attr.name] = attr.value
-      }
-
-      jobs.push({
-        id: num(attrs['job-id']) || 0,
-        uri: str(attrs['job-uri']) || '',
-        state: mapJobState(num(attrs['job-state'])),
-        name: str(attrs['job-name']) || 'unknown',
-        sheets: num(attrs['job-media-sheets-completed']) || undefined,
-      })
-    }
-
-    return jobs
-  }
-
-  /**
-   * Cancel a print job
-   */
-  async cancelJob(jobId: number): Promise<void> {
-    const groups: IppAttributeGroup[] = [
-      {
-        tag: IppTag.OperationAttributes,
-        attributes: [
-          { tag: IppTag.Charset, name: 'attributes-charset', value: 'utf-8' },
-          { tag: IppTag.NaturalLanguage, name: 'attributes-natural-language', value: 'en' },
-          { tag: IppTag.Uri, name: 'printer-uri', value: this.uri },
-          { tag: IppTag.Integer, name: 'job-id', value: jobId },
-          { tag: IppTag.NameWithoutLanguage, name: 'requesting-user-name', value: currentUser() },
-        ],
-      },
-    ]
-
-    const response = await this.client.request(IppOperation.CancelJob, groups)
-    this.checkStatus(response)
-  }
-
-  /**
-   * Get details about a specific job
-   */
-  async jobStatus(jobId: number): Promise<PrintJob> {
-    const groups: IppAttributeGroup[] = [
-      {
-        tag: IppTag.OperationAttributes,
-        attributes: [
-          { tag: IppTag.Charset, name: 'attributes-charset', value: 'utf-8' },
-          { tag: IppTag.NaturalLanguage, name: 'attributes-natural-language', value: 'en' },
-          { tag: IppTag.Uri, name: 'printer-uri', value: this.uri },
-          { tag: IppTag.Integer, name: 'job-id', value: jobId },
-          { tag: IppTag.NameWithoutLanguage, name: 'requesting-user-name', value: currentUser() },
-        ],
-      },
-    ]
-
-    const response = await this.client.request(IppOperation.GetJobAttributes, groups)
-    this.checkStatus(response)
-
-    const attrs = getAttributes(response, IppTag.JobAttributes)
-
-    return {
-      id: num(attrs['job-id']) || jobId,
-      uri: str(attrs['job-uri']) || '',
-      state: mapJobState(num(attrs['job-state'])),
-      name: str(attrs['job-name']) || 'unknown',
-      sheets: num(attrs['job-media-sheets-completed']) || undefined,
-    }
-  }
-
-  /**
-   * Identify the printer (make it beep/flash if supported)
-   */
-  async identify(): Promise<void> {
-    const groups: IppAttributeGroup[] = [
-      {
-        tag: IppTag.OperationAttributes,
-        attributes: [
-          { tag: IppTag.Charset, name: 'attributes-charset', value: 'utf-8' },
-          { tag: IppTag.NaturalLanguage, name: 'attributes-natural-language', value: 'en' },
-          { tag: IppTag.Uri, name: 'printer-uri', value: this.uri },
-          { tag: IppTag.NameWithoutLanguage, name: 'requesting-user-name', value: currentUser() },
-        ],
-      },
-    ]
-
-    try {
-      const response = await this.client.request(IppOperation.IdentifyPrinter, groups)
-      this.checkStatus(response)
-    }
-    catch {
-      // Identify is optional, not all printers support it
-    }
-  }
-
-  /**
-   * Validate that a job would succeed without actually printing
-   */
-  async validateJob(options?: PrintJobOptions): Promise<boolean> {
-    const format = options?.documentFormat ?? 'application/pdf'
-
-    const operationAttrs: IppAttributeGroup = {
-      tag: IppTag.OperationAttributes,
-      attributes: [
-        { tag: IppTag.Charset, name: 'attributes-charset', value: 'utf-8' },
-        { tag: IppTag.NaturalLanguage, name: 'attributes-natural-language', value: 'en' },
-        { tag: IppTag.Uri, name: 'printer-uri', value: this.uri },
-        { tag: IppTag.NameWithoutLanguage, name: 'requesting-user-name', value: currentUser() },
-        { tag: IppTag.MimeMediaType, name: 'document-format', value: format },
-      ],
-    }
-
-    const jobAttrs: IppAttributeGroup = {
-      tag: IppTag.JobAttributes,
-      attributes: buildJobAttributes(options),
-    }
-
-    const groups = jobAttrs.attributes.length > 0
-      ? [operationAttrs, jobAttrs]
-      : [operationAttrs]
-
-    try {
-      const response = await this.client.request(IppOperation.ValidateJob, groups)
-      return response.statusCode < 0x0400
-    }
-    catch {
-      return false
-    }
-  }
-
-  private checkStatus(response: IppResponse): void {
-    if (response.statusCode >= 0x0400) {
-      const statusName = Object.entries({
-        0x0400: 'bad-request',
-        0x0401: 'forbidden',
-        0x0402: 'not-authenticated',
-        0x0403: 'not-authorized',
-        0x0404: 'not-possible',
-        0x0405: 'timeout',
-        0x0406: 'not-found',
-        0x040A: 'document-format-not-supported',
-        0x040B: 'attributes-not-supported',
-        0x0500: 'internal-error',
-        0x0501: 'operation-not-supported',
-        0x0502: 'service-unavailable',
-        0x0504: 'device-error',
-        0x0505: 'temporary-error',
-        0x0507: 'busy',
-      }).find(([code]) => Number(code) === response.statusCode)?.[1] ?? 'unknown'
-
-      const msg = str(getAttribute(response, 'status-message'))
-      throw new Error(`IPP error 0x${response.statusCode.toString(16)}: ${statusName}${msg ? ` - ${msg}` : ''}`)
-    }
-  }
-}
-
-// Helpers
-
-function currentUser(): string {
-  return process.env.USER || process.env.USERNAME || 'anonymous'
-}
-
-function mapPrinterState(state: number): 'idle' | 'processing' | 'stopped' | 'unknown' {
-  switch (state) {
-    case 3: return 'idle'
-    case 4: return 'processing'
-    case 5: return 'stopped'
-    default: return 'unknown'
-  }
-}
-
-function mapJobState(state: number): string {
-  switch (state) {
-    case 3: return 'pending'
-    case 4: return 'pending-held'
-    case 5: return 'processing'
-    case 6: return 'processing-stopped'
-    case 7: return 'canceled'
-    case 8: return 'aborted'
-    case 9: return 'completed'
-    default: return `unknown(${state})`
-  }
-}
-
-function str(val: IppAttributeValue | undefined): string {
-  if (val === undefined || val === null) return ''
-  if (typeof val === 'string') return val
-  if (Array.isArray(val)) return str(val[0])
-  return String(val)
-}
-
-function num(val: IppAttributeValue | undefined): number {
-  if (val === undefined || val === null) return 0
-  if (typeof val === 'number') return val
-  if (Array.isArray(val)) return num(val[0])
-  return Number(val) || 0
-}
-
-function bool(val: IppAttributeValue | undefined): boolean {
-  if (val === undefined || val === null) return false
-  if (typeof val === 'boolean') return val
-  if (Array.isArray(val)) return bool(val[0])
-  return !!val
-}
-
-function strArray(val: IppAttributeValue | undefined): string[] {
-  if (val === undefined || val === null) return []
-  if (Array.isArray(val)) return val.map(v => str(v))
-  if (typeof val === 'string') return [val]
-  return [String(val)]
-}
-
-function numArray(val: IppAttributeValue | undefined): number[] {
-  if (val === undefined || val === null) return []
-  if (Array.isArray(val)) return val.map(v => num(v))
-  if (typeof val === 'number') return [val]
-  return []
-}
-
-function buildJobAttributes(options?: PrintJobOptions): Array<{ tag: number, name: string, value: IppAttributeValue }> {
-  if (!options) return []
-  const attrs: Array<{ tag: number, name: string, value: IppAttributeValue }> = []
-
-  if (options.copies && options.copies > 1) {
-    attrs.push({ tag: IppTag.Integer, name: 'copies', value: options.copies })
-  }
-
-  if (options.media) {
-    attrs.push({ tag: IppTag.Keyword, name: 'media', value: options.media })
-  }
-
-  if (options.orientation) {
-    attrs.push({ tag: IppTag.Enum, name: 'orientation-requested', value: OrientationMap[options.orientation] })
-  }
-
-  if (options.quality) {
-    attrs.push({ tag: IppTag.Enum, name: 'print-quality', value: QualityMap[options.quality] })
-  }
-
-  if (options.sides) {
-    attrs.push({ tag: IppTag.Keyword, name: 'sides', value: options.sides })
-  }
-
-  if (options.colorMode) {
-    attrs.push({ tag: IppTag.Keyword, name: 'print-color-mode', value: options.colorMode })
-  }
-
-  if (options.fitToPage) {
-    attrs.push({ tag: IppTag.Keyword, name: 'print-scaling', value: 'fit' })
-  }
-
-  return attrs
-}
-
-function detectFormat(data: Buffer | Uint8Array): string {
-  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-
-  // PDF: %PDF
-  if (buf.length >= 4 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) {
-    return 'application/pdf'
-  }
-
-  // JPEG: FF D8 FF
-  if (buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) {
-    return 'image/jpeg'
-  }
-
-  // PNG: 89 50 4E 47
-  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
-    return 'image/png'
-  }
-
-  // PostScript: %!
-  if (buf.length >= 2 && buf[0] === 0x25 && buf[1] === 0x21) {
-    return 'application/postscript'
-  }
-
-  return 'application/octet-stream'
-}
-
-function mimeFromPath(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase()
-  switch (ext) {
-    case 'pdf': return 'application/pdf'
-    case 'jpg':
-    case 'jpeg': return 'image/jpeg'
-    case 'png': return 'image/png'
-    case 'gif': return 'image/gif'
-    case 'tiff':
-    case 'tif': return 'image/tiff'
-    case 'ps': return 'application/postscript'
-    case 'txt': return 'text/plain'
-    case 'html':
-    case 'htm': return 'text/html'
-    default: return 'application/octet-stream'
+  static async fromHost(host: string): Promise<Printer> {
+    const printer = new Printer(`ipp://${host}:631/ipp/print`)
+    printer.driver = await createDriverFromHost(host)
+    return printer
   }
 }
