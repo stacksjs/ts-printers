@@ -1,67 +1,64 @@
 # Configuration
 
-_This is just an example of the ts-starter docs._
+ts-printers can be configured using a `print.config.ts` file in your project root. It will be automatically loaded by both the CLI and the library.
 
-The Reverse Proxy can be configured using a `reverse-proxy.config.ts` _(or `reverse-proxy.config.js`)_ file and it will be automatically loaded when running the `reverse-proxy` command.
+## Configuration File
 
 ```ts
-// reverse-proxy.config.{ts,js}
-import type { ReverseProxyOptions } from '@stacksjs/rpx'
-import os from 'node:os'
-import path from 'node:path'
+// print.config.ts
+import type { PrintConfig } from 'ts-printers'
 
-const config: ReverseProxyOptions = {
-  /**
-   * The from URL to proxy from.
-   * Default: localhost:5173
-   */
-  from: 'localhost:5173',
+const config: PrintConfig = {
+  // Default printer URI or name (used when --printer is omitted)
+  defaultPrinter: 'ipp://HP-Tango.local:631/ipp/print',
 
-  /**
-   * The to URL to proxy to.
-   * Default: stacks.localhost
-   */
-  to: 'stacks.localhost',
-
-  /**
-   * The HTTPS settings.
-   * Default: true
-   * If set to false, the proxy will use HTTP.
-   * If set to true, the proxy will use HTTPS.
-   * If set to an object, the proxy will use HTTPS with the provided settings.
-   */
-  https: {
-    domain: 'stacks.localhost',
-    hostCertCN: 'stacks.localhost',
-    caCertPath: path.join(os.homedir(), '.stacks', 'ssl', `stacks.localhost.ca.crt`),
-    certPath: path.join(os.homedir(), '.stacks', 'ssl', `stacks.localhost.crt`),
-    keyPath: path.join(os.homedir(), '.stacks', 'ssl', `stacks.localhost.crt.key`),
-    altNameIPs: ['127.0.0.1'],
-    altNameURIs: ['localhost'],
-    organizationName: 'stacksjs.org',
-    countryName: 'US',
-    stateName: 'California',
-    localityName: 'Playa Vista',
-    commonName: 'stacks.localhost',
-    validityDays: 180,
-    verbose: false,
+  // Named printers for quick access
+  printers: {
+    tango: {
+      uri: 'ipp://HP-Tango.local:631/ipp/print',
+      name: 'HP Tango Exclusive',
+      model: 'HP Tango X',
+    },
+    office: {
+      uri: 'ipp://office-printer.local:631/ipp/print',
+      name: 'Office Printer',
+    },
   },
 
-  /**
-   * The verbose setting.
-   * Default: false
-   * If set to true, the proxy will log more information.
-   */
+  // Request timeout in milliseconds
+  timeout: 10000,
+
+  // Enable verbose logging
   verbose: false,
 }
 
 export default config
 ```
 
-_Then run:_
+## PrintConfig Options
 
-```bash
-./rpx start
-```
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `defaultPrinter` | `string` | — | Default printer URI or key from `printers` map |
+| `printers` | `Record<string, PrinterEntry>` | — | Named printer configurations |
+| `timeout` | `number` | `10000` | Request timeout in ms |
+| `verbose` | `boolean` | `false` | Enable verbose logging |
 
-To learn more, head over to the [documentation](https://reverse-proxy.sh/).
+## PrinterEntry
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `uri` | `string` | IPP URI (e.g. `ipp://host:631/ipp/print`) |
+| `name` | `string` | Display name |
+| `model` | `string` | Printer model (helps with driver selection) |
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `DEBUG` | Enable debug output for discovery |
+| `VERBOSE` | Enable verbose logging |
+
+## Auto-Discovery
+
+When no printer is specified (via config or CLI flag), ts-printers will automatically discover printers on the local network using mDNS/Bonjour and use the first one found.

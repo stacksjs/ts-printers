@@ -1,93 +1,57 @@
-<p align="center"><img src="https://github.com/stacksjs/rpx/blob/main/.github/art/cover.jpg?raw=true" alt="Social Card of this repo"></p>
+# What is ts-printers?
 
-# A Better Developer Experience
+`ts-printers` is a TypeScript library and CLI for interacting with network printers. It provides a driver-based architecture where vendor-specific features (firmware updates, printhead maintenance) are handled by dedicated drivers, while standard printing operations use the IPP (Internet Printing Protocol).
 
-> A TypeScript Starter Kit that will help you bootstrap your next project without minimal opinion.
+## Key Features
 
-# bun-ts-starter
+- **Driver-based architecture** — Extensible system with HP driver built-in, generic IPP fallback for any printer
+- **IPP 2.0 protocol** — Full binary encoding/decoding, implemented from scratch with zero external dependencies
+- **Printer discovery** — Find printers on your network via mDNS/Bonjour
+- **Firmware management** — Automated firmware download, extraction, and installation (HP printers)
+- **Printer maintenance** — Printhead cleaning, alignment, ink smear cleaning, diagnostic pages
+- **CLI & library** — Use from the command line or import into your TypeScript project
 
-This is an opinionated TypeScript Starter kit to help kick-start development of your next Bun package.
+## Supported Printers
 
-## Get Started
+### HP (full support)
+- HP Tango / Tango X (Exclusive) — fully tested
+- Other HP inkjet printers with LEDM support — should work
 
-It's rather simple to get your package development started:
+### Generic IPP (standard features)
+- Any IPP-compatible printer (most modern network printers)
+- Printing, job management, status, ink levels
 
-```bash
-# you may use this GitHub template or the following command:
-bunx degit stacksjs/ts-starter my-pkg
-cd my-pkg
+## How It Works
 
- # if you don't have pnpm installed, run `npm i -g pnpm`
-bun i # install all deps
-bun run build # builds the library for production-ready use
-
-# after you have successfully committed, you may create a "release"
-bun run release # automates git commits, versioning, and changelog generations
+```
+ts-printers
+├── Discovery (mDNS/Bonjour)
+│   └── Finds printers on your network
+├── Driver Registry
+│   ├── HP Driver (firmware, maintenance, printing)
+│   ├── Generic IPP Driver (printing only)
+│   └── Custom drivers (extensible)
+└── IPP Protocol
+    └── Binary encoding/decoding over HTTP
 ```
 
-_Check out the package.json scripts for more commands._
+When you connect to a printer, `ts-printers` auto-detects the vendor and selects the appropriate driver. HP printers get full firmware and maintenance support. Other printers use the generic IPP driver for standard operations.
 
-### Developer Experience (DX)
+## Quick Example
 
-This Starter Kit comes pre-configured with the following:
+```ts
+import { Printer } from 'ts-printers'
 
-- [Powerful Build Process](https://github.com/oven-sh/bun) - via Bun
-- [Fully Typed APIs](https://www.typescriptlang.org/) - via TypeScript
-- [Documentation-ready](https://vitepress.dev/) - via VitePress
-- [CLI & Binary](https://www.npmjs.com/package/bunx) - via Bun & CAC
-- [Be a Good Commitizen](https://www.npmjs.com/package/git-cz) - pre-configured Commitizen & git-cz setup to simplify semantic git commits, versioning, and changelog generations
-- [Built With Testing In Mind](https://bun.sh/docs/cli/test) - pre-configured unit-testing powered by [Bun](https://bun.sh/docs/cli/test)
-- [Renovate](https://renovatebot.com/) - optimized & automated PR dependency updates
-- [ESLint](https://eslint.org/) - for code linting _(and formatting)_
-- [GitHub Actions](https://github.com/features/actions) - runs your CI _(fixes code style issues, tags releases & creates its changelogs, runs the test suite, etc.)_
+// Auto-detects HP driver
+const printer = new Printer('ipp://HP-Tango.local:631/ipp/print')
 
-## Changelog
+// Standard IPP operations (all printers)
+const status = await printer.status()
+console.log(status.state, status.markerLevels)
 
-Please see our [releases](https://github.com/stacksjs/stacks/releases) page for more information on what has changed recently.
+await printer.printFile('./document.pdf')
 
-## Stargazers
-
-[![Stargazers](https://starchart.cc/stacksjs/ts-starter.svg?variant=adaptive)](https://starchart.cc/stacksjs/ts-starter)
-
-## Contributing
-
-Please review the [Contributing Guide](https://github.com/stacksjs/contributing) for details.
-
-## Community
-
-For help, discussion about best practices, or any other conversation that would benefit from being searchable:
-
-[Discussions on GitHub](https://github.com/stacksjs/stacks/discussions)
-
-For casual chit-chat with others using this package:
-
-[Join the Stacks Discord Server](https://discord.gg/stacksjs)
-
-## Postcardware
-
-Two things are true: Stacks OSS will always stay open-source, and we do love to receive postcards from wherever Stacks is used! 🌍 _We also publish them on our website. And thank you, Spatie_
-
-Our address: Stacks.js, 12665 Village Ln #2306, Playa Vista, CA 90094
-
-## Sponsors
-
-We would like to extend our thanks to the following sponsors for funding Stacks development. If you are interested in becoming a sponsor, please reach out to us.
-
-- [JetBrains](https://www.jetbrains.com/)
-- [The Solana Foundation](https://solana.com/)
-
-## Credits
-
-- [Chris Breuer](https://github.com/chrisbbreuer)
-- [All Contributors](https://github.com/stacksjs/rpx/graphs/contributors)
-
-## License
-
-The MIT License (MIT). Please see [LICENSE](https://github.com/stacksjs/ts-starter/tree/main/LICENSE.md) for more information.
-
-Made with 💙
-
-<!-- Badges -->
-
-<!-- [codecov-src]: https://img.shields.io/codecov/c/gh/stacksjs/rpx/main?style=flat-square
-[codecov-href]: https://codecov.io/gh/stacksjs/rpx -->
+// HP-specific features
+await printer.clean('level1')
+await printer.updateFirmware(msg => console.log(msg))
+```
