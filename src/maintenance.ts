@@ -118,6 +118,10 @@ export class PrinterMaintenance {
       const stateResponse = await globalThis.fetch(`${this.baseUrl}/Calibration/State`)
       const stateXml = await stateResponse.text()
 
+      if (stateXml.includes('CalibrationValid')) {
+        return { success: true, message: 'Printhead alignment is already calibrated. No action needed.' }
+      }
+
       // Create a calibration session to start alignment
       const response = await globalThis.fetch(`${this.baseUrl}/Calibration/Session`, {
         method: 'POST',
@@ -178,15 +182,15 @@ export class PrinterMaintenance {
 
     onProgress?.('Step 1/4: Running level 1 printhead cleaning...')
     results.push(await this.clean('level1'))
-    await sleep(5000) // Give the printer time between operations
+    await this.waitUntilIdle(60000)
 
     onProgress?.('Step 2/4: Printing cleaning verification page...')
     results.push(await this.cleaningVerification())
-    await sleep(5000)
+    await this.waitUntilIdle(60000)
 
     onProgress?.('Step 3/4: Running level 2 deep cleaning...')
     results.push(await this.clean('level2'))
-    await sleep(5000)
+    await this.waitUntilIdle(60000)
 
     onProgress?.('Step 4/4: Running printhead alignment...')
     results.push(await this.align())
@@ -232,6 +236,29 @@ export class PrinterMaintenance {
     }
 
     return { success: false, message: `${description} failed: printer busy after retries` }
+  }
+
+  /**
+   * Wait for the printer to become idle (no active jobs)
+   */
+  private async waitUntilIdle(timeoutMs: number): Promise<void> {
+    const start = Date.now()
+    await sleep(5000) // Initial wait
+
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const response = await globalThis.fetch(`${this.baseUrl}/DevMgmt/ProductStatusDyn.xml`)
+        const xml = await response.text()
+        // If the printer is in power save or has no processing status, it's idle
+        if (xml.includes('inPowerSave') || xml.includes('ready') || !xml.includes('Processing')) {
+          return
+        }
+      }
+      catch {
+        // Printer might be busy, keep waiting
+      }
+      await sleep(5000)
+    }
   }
 
   private async pollCalibration(sessionPath: string): Promise<void> {

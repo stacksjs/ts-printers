@@ -304,13 +304,46 @@ export class FirmwareUpdater {
   }
 
   /**
-   * Send firmware data to the printer via port 9100 (PJL data stream).
-   * The .ful2 file starts with @PJL ENTER LANGUAGE=FWUPDATE2 which triggers
-   * the firmware update handler on HP printers.
+   * Send firmware to the printer:
+   * 1. Put printer in recovery/firmware mode via LEDM
+   * 2. Wait for it to reboot into recovery mode
+   * 3. Send .ful2 via port 9100 (PJL FWUPDATE2 is handled in recovery mode)
    */
   private async sendFirmware(data: Buffer, onProgress?: (message: string) => void): Promise<void> {
+    // Step 1: Put printer into firmware/recovery mode
+    onProgress?.('  Setting printer to firmware update mode...')
+    await this.fetchPut('/FirmwareUpdate/FirmwareMode',
+      `<?xml version="1.0" encoding="UTF-8"?><fwudyn:FirmwareMode xmlns:fwudyn="${FW_NS}">recovery</fwudyn:FirmwareMode>`)
+
+    // Step 2: Wait for printer to reboot into recovery mode
+    onProgress?.('  Waiting for printer to enter recovery mode...')
+    const ip = await this.resolveIp()
+    await sleep(15000)
+
+    // Wait for port 9100 to become available in recovery mode
+    await waitForPort(ip, 9100, 120000)
+    onProgress?.('  Printer is in recovery mode.')
+
+    // Step 3: Send firmware via port 9100
     onProgress?.(`  Sending ${(data.length / 1024 / 1024).toFixed(1)} MB via port 9100...`)
-    await sendToPort9100(this.host, data, onProgress)
+    await sendToPort9100(ip, data, onProgress)
+  }
+
+  /**
+   * Resolve the printer's IP address from hostname
+   */
+  private async resolveIp(): Promise<string> {
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(this.host)) return this.host
+
+    try {
+      const proc = Bun.spawn(['ping', '-c', '1', '-t', '5', this.host], { stdout: 'pipe', stderr: 'pipe' })
+      const output = await new Response(proc.stdout).text()
+      const match = output.match(/\((\d+\.\d+\.\d+\.\d+)\)/)
+      if (match) return match[1]
+    }
+    catch { /* fall through */ }
+
+    return this.host
   }
 
   /**
@@ -560,12 +593,8 @@ async function cleanup(tempExe: string, tempDir: string): Promise<void> {
 }
 
 /**
- * Send firmware data to the printer via raw TCP port 9100 (PJL/PCL data stream)
- * This is how HP's EnterpriseDU sends firmware updates over the network.
- *
- * Key: after writing all data, we must wait for the printer to fully consume it
- * before closing the socket. The printer reads at its own pace and an early close
- * causes the firmware install to silently fail.
+ * Send firmware data to the printer via raw TCP port 9100.
+ * The printer must be in recovery/firmware mode for this to work as a firmware update.
  */
 function sendToPort9100(
   host: string,
@@ -576,83 +605,45 @@ function sendToPort9100(
     let resolved = false
 
     const socket = connect({ host, port: 9100 }, () => {
-      const totalBytes = data.length
-      const chunkSize = 8 * 1024 // 8KB chunks — smaller to avoid overwhelming the printer
-      let bytesSent = 0
-      let lastPercent = 0
+      onProgress?.('  Connected. Transferring firmware...')
 
-      function writeChunk(): void {
-        let canContinue = true
-
-        while (canContinue && bytesSent < totalBytes) {
-          const end = Math.min(bytesSent + chunkSize, totalBytes)
-          const chunk = data.subarray(bytesSent, end)
-
-          canContinue = socket.write(chunk)
-          bytesSent = end
-
-          const percent = Math.floor((bytesSent / totalBytes) * 100)
-          if (percent >= lastPercent + 5) {
-            lastPercent = percent
-            onProgress?.(`  Progress: ${percent}% (${(bytesSent / 1024 / 1024).toFixed(1)} / ${(totalBytes / 1024 / 1024).toFixed(1)} MB)`)
-          }
-        }
-
-        if (bytesSent >= totalBytes) {
-          onProgress?.('  All data written. Waiting for printer to process...')
-          // Don't end the socket immediately — let the printer read at its own pace.
-          // The printer will close the connection when it's done receiving,
-          // or we wait a generous timeout for it to process.
-          //
-          // Use allowHalfOpen-style: we stop writing but keep the socket open
-          // so the printer can finish reading from its TCP receive buffer.
-          socket.end()
-        }
-        else {
-          socket.once('drain', writeChunk)
-        }
-      }
-
-      writeChunk()
+      socket.write(data, () => {
+        onProgress?.('  All data written. Waiting for printer to acknowledge...')
+        socket.end()
+      })
     })
 
-    // When the printer closes its end, the socket emits 'close'
-    socket.on('close', () => {
+    // Report progress periodically
+    let lastPct = 0
+    const progressInterval = setInterval(() => {
+      const pct = Math.floor((socket.bytesWritten / data.length) * 100)
+      if (pct > lastPct + 9) {
+        lastPct = pct
+        onProgress?.(`  Progress: ${pct}%`)
+      }
+    }, 3000)
+
+    function done(msg: string): void {
       if (!resolved) {
         resolved = true
-        onProgress?.('  Printer acknowledged firmware. Installing...')
+        clearInterval(progressInterval)
+        onProgress?.(msg)
         resolve()
       }
-    })
+    }
 
-    // 'end' fires when the printer sends FIN — it's done reading
-    socket.on('end', () => {
-      // Printer finished reading, socket will close shortly
-    })
+    socket.on('close', () => done('  Transfer complete.'))
+    socket.on('end', () => { /* printer sent FIN */ })
+    socket.on('data', () => { /* consume responses */ })
 
-    // If we get data back from the printer (some send PJL responses), just consume it
-    socket.on('data', () => {
-      // Consume any response silently
-    })
-
-    socket.setTimeout(600000) // 10 minute timeout
-
-    socket.on('timeout', () => {
-      if (!resolved) {
-        resolved = true
-        socket.destroy()
-        // If we timed out but all data was written, the printer is likely processing
-        onProgress?.('  Connection timed out, but all data was sent. Printer may still be processing.')
-        resolve()
-      }
-    })
-
+    socket.setTimeout(600000)
+    socket.on('timeout', () => { socket.destroy(); done('  Timeout (data sent, printer processing).') })
     socket.on('error', (err) => {
+      clearInterval(progressInterval)
       if (!resolved) {
         resolved = true
-        // ECONNRESET after all data sent is normal — printer resets connection to start install
         if (err.message.includes('ECONNRESET')) {
-          onProgress?.('  Printer reset connection (normal during firmware install).')
+          onProgress?.('  Printer reset connection (normal during install).')
           resolve()
         }
         else {
@@ -661,6 +652,27 @@ function sendToPort9100(
       }
     })
   })
+}
+
+/**
+ * Wait for a TCP port to become available on a host
+ */
+async function waitForPort(host: string, port: number, timeoutMs: number): Promise<void> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const s = connect({ host, port }, () => { s.destroy(); resolve() })
+        s.on('error', () => { s.destroy(); reject() })
+        s.setTimeout(3000, () => { s.destroy(); reject() })
+      })
+      return
+    }
+    catch {
+      await sleep(5000)
+    }
+  }
+  throw new Error(`Timeout waiting for ${host}:${port}`)
 }
 
 // Utility helpers
