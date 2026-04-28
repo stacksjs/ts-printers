@@ -35,6 +35,7 @@ export interface MaintenanceResult {
 
 export type CleaningLevel = 'level1' | 'level2' | 'level3'
 
+// eslint-disable-next-line pickier/no-unused-vars
 export type ProgressCallback = (message: string) => void
 
 /**
@@ -112,9 +113,11 @@ export abstract class PrinterDriver {
  * Driver factory function signature.
  * Given a discovered printer (or manual config), returns the appropriate driver.
  */
+// eslint-disable-next-line pickier/no-unused-vars
 export type DriverFactory = (uri: string, host: string, name: string) => PrinterDriver
 
 /**
  * Driver match function — returns true if this driver can handle the given printer.
  */
+// eslint-disable-next-line pickier/no-unused-vars
 export type DriverMatcher = (printer: DiscoveredPrinter | { model?: string, uri: string }) => boolean
