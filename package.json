@@ -1,7 +1,7 @@
 {
   "name": "ts-printers",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A TypeScript library and CLI for interacting with printers via IPP (Internet Printing Protocol).",
   "author": "Chris Breuer <chris@stacksjs.org>",
   "license": "MIT",

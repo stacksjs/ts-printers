@@ -1,3 +1,45 @@
+### 🐛 Bug Fixes
+
+- add setup-bun to publish-commit job ([ca2ec03](https://github.com/stacksjs/ts-printers/commit/ca2ec03)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- widen driverName type for subclassing, remove stale ts-expect-error ([a73f0b9](https://github.com/stacksjs/ts-printers/commit/a73f0b9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- set version to 0.0.1 ([89e452b](https://github.com/stacksjs/ts-printers/commit/89e452b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fresh install to pick up dtsx 0.9.14 and bunfig 0.15.9 ([566a223](https://github.com/stacksjs/ts-printers/commit/566a223)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fix lint errors for unused type params ([adbe02a](https://github.com/stacksjs/ts-printers/commit/adbe02a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- use Pantry action for publish-commit and add job dependencies ([47d8e50](https://github.com/stacksjs/ts-printers/commit/47d8e50)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([c9f44af](https://github.com/stacksjs/ts-printers/commit/c9f44af)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([cfadf60](https://github.com/stacksjs/ts-printers/commit/cfadf60)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b05165d](https://github.com/stacksjs/ts-printers/commit/b05165d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([145411a](https://github.com/stacksjs/ts-printers/commit/145411a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- initial commit ([c66b86c](https://github.com/stacksjs/ts-printers/commit/c66b86c)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+### 🐛 Bug Fixes
+
+- add setup-bun to publish-commit job ([ca2ec03](https://github.com/stacksjs/ts-printers/commit/ca2ec03)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- widen driverName type for subclassing, remove stale ts-expect-error ([a73f0b9](https://github.com/stacksjs/ts-printers/commit/a73f0b9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- fresh install to pick up dtsx 0.9.14 and bunfig 0.15.9 ([566a223](https://github.com/stacksjs/ts-printers/commit/566a223)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fix lint errors for unused type params ([adbe02a](https://github.com/stacksjs/ts-printers/commit/adbe02a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- use Pantry action for publish-commit and add job dependencies ([47d8e50](https://github.com/stacksjs/ts-printers/commit/47d8e50)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([c9f44af](https://github.com/stacksjs/ts-printers/commit/c9f44af)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([cfadf60](https://github.com/stacksjs/ts-printers/commit/cfadf60)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b05165d](https://github.com/stacksjs/ts-printers/commit/b05165d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([145411a](https://github.com/stacksjs/ts-printers/commit/145411a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- initial commit ([c66b86c](https://github.com/stacksjs/ts-printers/commit/c66b86c)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
 
 ## v0.3.1...main
 
