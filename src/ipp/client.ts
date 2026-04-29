@@ -52,7 +52,6 @@ export class IppClient {
         },
         body: encoded,
         signal: controller.signal,
-        // @ts-expect-error Bun supports this
         tls: {
           rejectUnauthorized: false,
         },

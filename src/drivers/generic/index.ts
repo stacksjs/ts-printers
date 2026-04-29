@@ -14,7 +14,7 @@ import type { DriverCapabilities, DriverFactory, DriverMatcher } from '../base'
 import { PrinterDriver } from '../base'
 
 export class GenericIppDriver extends PrinterDriver {
-  readonly driverName = 'Generic IPP'
+  readonly driverName: string = 'Generic IPP'
   protected client: IppClient
 
   constructor(uri: string, host: string, name: string) {
