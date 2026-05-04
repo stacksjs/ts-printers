@@ -5,7 +5,7 @@
     "": {
       "name": "ts-printers",
       "devDependencies": {
-        "better-dx": "^0.2.7",
+        "better-dx": "^0.2.12",
       },
     },
   },
