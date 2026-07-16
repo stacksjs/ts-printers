@@ -1,3 +1,18 @@
+[Compare changes](https://github.com/stacksjs/ts-printers/compare/v0.1.2...v0.1.3)
+
+## 🐛 Bug Fixes
+
+- **pkg**: drop sideEffects:false, it broke the published dist ([80ed313](https://github.com/stacksjs/ts-printers/commit/80ed313)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🧹 Chores
+
+- release v0.1.3 ([7b40edf](https://github.com/stacksjs/ts-printers/commit/7b40edf)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: declare bun ^1.3.14 in deps.yaml ([f0e6bbe](https://github.com/stacksjs/ts-printers/commit/f0e6bbe)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 ### 🐛 Bug Fixes
 
 - add setup-bun to publish-commit job ([ca2ec03](https://github.com/stacksjs/ts-printers/commit/ca2ec03)) _(by glennmichael123 <gtorregosa@gmail.com>)_
