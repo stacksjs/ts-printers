@@ -1,3 +1,21 @@
+[Compare changes](https://github.com/stacksjs/ts-printers/compare/v0.1.3...v0.1.4)
+
+## 🐛 Bug Fixes
+
+- **build**: build the CLI the bin field points at ([4865c12](https://github.com/stacksjs/ts-printers/commit/4865c12)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 📚 Documentation
+
+- link the community as stacksjs.com/discord ([370fc33](https://github.com/stacksjs/ts-printers/commit/370fc33)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🧹 Chores
+
+- release v0.1.4 ([6b2bbe0](https://github.com/stacksjs/ts-printers/commit/6b2bbe0)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/ts-printers/compare/v0.1.2...v0.1.3)
 
 ## 🐛 Bug Fixes
