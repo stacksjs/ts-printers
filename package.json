@@ -67,7 +67,7 @@
     "lint:fix": "bunx --bun pickier . --fix",
     "changelog": "bunx logsmith --verbose",
     "changelog:generate": "bunx logsmith --output CHANGELOG.md",
-    "release": "bunx --bun bumpx prompt --recursive",
+    "release": "bunx --bun @stacksjs/bumpx prompt --recursive",
     "postinstall": "bunx git-hooks",
     "dev:docs": "bun --bun bunpress dev docs",
     "build:docs": "bun --bun bunpress build docs",
@@ -75,7 +75,7 @@
     "typecheck": "bun --bun tsc --noEmit",
     "format": "bunx --bun pickier . --format",
     "format:fix": "bunx --bun pickier . --format --write",
-    "release:patch": "bunx --bun bumpx patch --recursive --commit --tag --push --yes"
+    "release:patch": "bunx --bun @stacksjs/bumpx patch --recursive --commit --tag --push --yes"
   },
   "devDependencies": {
     "@stacksjs/clapp": "^0.2.12",
